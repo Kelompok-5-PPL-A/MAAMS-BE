@@ -58,6 +58,13 @@ class QuestionViewTest(APITestCase):
         # invalid data for post
         self.invalid_data_missing = {'question': 'Test question missing', 'mode': ''}
         self.invalid_data = {'question': 'Test question invalid', 'mode': 'invalid'}
+        self.invalid_data_empty_tags = {
+            'title': 'test',
+            'question': 'Test question empty tags', 
+            'mode': 'PRIBADI',
+            'tags': []
+        }
+
         
         # invalid data for put
         self.invalid_data_put = {'id': self.question_uuid, 'mode': 'invalid'}
@@ -204,6 +211,11 @@ class QuestionViewTest(APITestCase):
         serializer = QuestionRequest(data=self.invalid_data)
         
         self.assertFalse(serializer.is_valid())
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_post_empty_tags(self):
+        url = reverse(self.post_url)
+        response = self.client.post(url, self.invalid_data_empty_tags, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
     def test_post_question_invalid_value(self):
