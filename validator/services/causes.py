@@ -31,7 +31,7 @@ class CausesService:
         problem = question.Question.objects.get(pk=question_id)
 
         if all(cause.status for cause in causes): 
-            raise Exception("No cause to validate")
+            raise InvalidSubmissionException("No cause to validate")
         
         for cause in causes:
             if not cause.status:
