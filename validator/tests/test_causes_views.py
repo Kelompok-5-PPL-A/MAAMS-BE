@@ -213,7 +213,7 @@ class CausesViewTest(APITestCase):
         Causes.objects.create(problem=question, row=1, column=2, mode='PRIBADI', cause='Cause 2', status=True)
 
         with patch.object(CausesService, 'api_call', side_effect=Exception("No cause to validate")):
-            url = reverse('your_validate_url_name', kwargs={'question_id': question_id})
+            url = reverse(self.validate_url, kwargs={'question_id': question_id})
             response = self.client.post(url)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

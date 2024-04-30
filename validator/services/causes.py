@@ -6,7 +6,7 @@ from validator.dataclasses.create_cause import CreateCauseDataClass
 from validator.models import question
 from validator.models.causes import Causes
 from validator.services import question
-from validator.exceptions import NotFoundRequestException, ForbiddenRequestException
+from validator.exceptions import NotFoundRequestException, ForbiddenRequestException, InvalidSubmissionException
 from validator.constants import ErrorMsg
 import uuid
 
@@ -30,19 +30,23 @@ class CausesService:
         causes = Causes.objects.filter(problem_id=question_id, row=max_row)
         problem = question.Question.objects.get(pk=question_id)
 
+        if all(cause.status for cause in causes): 
+            raise Exception("No cause to validate")
+        
         for cause in causes:
-            if max_row == 1:
-                prompt = f"Is '{cause.cause}' the cause of '{problem.question}'? Answer using True/False"
-                if self.api_call(prompt):
-                    cause.status = True
-                    cause.save()
-            else:
-                prev_cause = Causes.objects.filter(problem_id=question_id, row=max_row-1, column=cause.column).first()
-                if prev_cause and prev_cause.cause == cause.cause:
-                    prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
+            if not cause.status:
+                if max_row == 1:
+                    prompt = f"Is '{cause.cause}' the cause of '{problem.question}'? Answer using True/False"
                     if self.api_call(prompt):
                         cause.status = True
                         cause.save()
+                else:
+                    prev_cause = Causes.objects.filter(problem_id=question_id, row=max_row-1, column=cause.column).first()
+                    if prev_cause and prev_cause.cause == cause.cause:
+                        prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
+                        if self.api_call(prompt):
+                            cause.status = True
+                            cause.save()
 
 
     def create(self, question_id: uuid, cause: str, row: int, column: int, mode: str) -> CreateCauseDataClass:
