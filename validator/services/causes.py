@@ -1,3 +1,4 @@
+from typing import List
 import openai
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
@@ -25,29 +26,47 @@ class CausesService:
 
         return answer
 
-    def validate(self, question_id: uuid):
+    def validate(self, question_id: uuid) -> List[CreateCauseDataClass]:
         max_row = Causes.objects.filter(problem_id=question_id).order_by('-row').values_list('row', flat=True).first()
         causes = Causes.objects.filter(problem_id=question_id, row=max_row)
         problem = question.Question.objects.get(pk=question_id)
+        updated_causes = []
 
-        if all(cause.status for cause in causes): 
+        if all(cause.status for cause in causes):
             raise InvalidSubmissionException("No cause to validate")
-        
+
         for cause in causes:
             if not cause.status:
-                if max_row == 1:
-                    prompt = f"Is '{cause.cause}' the cause of '{problem.question}'? Answer using True/False"
-                    if self.api_call(prompt):
-                        cause.status = True
-                        cause.save()
-                else:
-                    prev_cause = Causes.objects.filter(problem_id=question_id, row=max_row-1, column=cause.column).first()
-                    if prev_cause and prev_cause.cause == cause.cause:
-                        prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
-                        if self.api_call(prompt):
-                            cause.status = True
-                            cause.save()
+                self._validate_cause(cause, max_row, question_id, problem)
+            updated_causes.append(cause)
+        
+        return [
+            CreateCauseDataClass(
+                question_id=question_id,
+                id=cause.id,
+                row=cause.row,
+                column=cause.column,
+                mode=cause.mode,
+                cause=cause.cause,
+                status=cause.status
+            )
+            for cause in updated_causes
+        ]
 
+    @staticmethod
+    def _validate_cause(cause, max_row, question_id, problem):
+        if max_row == 1:
+            prompt = f"Is '{cause.cause}' the cause of '{problem.question}'? Answer using True/False"
+        else:
+            prev_cause = Causes.objects.filter(problem_id=question_id, row=max_row-1, column=cause.column).first()
+            if prev_cause and prev_cause.cause == cause.cause:
+                prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
+            else:
+                return
+
+        if CausesService.api_call(prompt):
+            cause.status = True
+            cause.save()
 
     def create(self, question_id: uuid, cause: str, row: int, column: int, mode: str) -> CreateCauseDataClass:
         cause = Causes.objects.create(
