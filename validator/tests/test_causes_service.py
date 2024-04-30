@@ -83,3 +83,17 @@ class CausesServiceTest(TestCase):
         cause2.refresh_from_db()
 
         self.assertTrue(cause2.status)
+
+    def test_validate_all_causes_true_exception(self):
+        question_id = uuid.uuid4()
+        question = Question.objects.create(pk=question_id, question='Test question')
+
+        Causes.objects.create(problem=question, row=1, column=1, mode='PRIBADI', cause='Cause 1', status=True)
+        Causes.objects.create(problem=question, row=1, column=2, mode='PRIBADI', cause='Cause 2', status=True)
+
+        with patch.object(CausesService, 'api_call', side_effect=Exception("No cause to validate")):
+            with self.assertRaises(Exception) as context:
+                service = CausesService()
+                service.validate(question_id)
+    
+        self.assertEqual(str(context.exception), "No cause to validate")

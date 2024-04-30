@@ -205,6 +205,20 @@ class CausesViewTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(Causes.objects.get(problem=Question.objects.get(pk=self.question_uuid1), row=2).status)
 
+    def test_all_causes_already_true(self):
+        question_id = uuid.uuid4()
+        question = Question.objects.create(pk=question_id, question='Test question')
+
+        Causes.objects.create(problem=question, row=1, column=1, mode='PRIBADI', cause='Cause 1', status=True)
+        Causes.objects.create(problem=question, row=1, column=2, mode='PRIBADI', cause='Cause 2', status=True)
+
+        with patch.object(CausesService, 'api_call', side_effect=Exception("No cause to validate")):
+            url = reverse('your_validate_url_name', kwargs={'question_id': question_id})
+            response = self.client.post(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['detail'], "No cause to validate")
+
     '''
     Admin Role Tests
     '''
