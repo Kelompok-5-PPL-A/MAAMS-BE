@@ -102,6 +102,7 @@ class QuestionViewTest(APITestCase):
         self.delete_url = 'validator:delete_question'
         self.get_matched = 'validator:get_matched'
         self.get_recent = 'validator:get_recent'
+        self.get_field_values = 'validator:get_question_field_values'
 
         """
         Create some tags
@@ -602,3 +603,29 @@ class QuestionViewTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
         self.assertIn('results', response.data)
+
+    def test_get_field_values_as_admin(self):
+        self.user1.is_superuser = True
+        self.user1.is_staff = True
+        self.user1.save()
+        
+        url = reverse(self.get_field_values)
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('pengguna', response.data)
+        self.assertIn('judul', response.data)
+        self.assertIn('topik', response.data)
+
+        # reset user status
+        self.user1.is_superuser = False
+        self.user1.is_staff = False
+        self.user1.save()
+
+    def test_get_field_values_non_admin(self):
+        url = reverse(self.get_field_values)
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('judul', response.data)
+        self.assertIn('topik', response.data)

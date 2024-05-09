@@ -17,6 +17,7 @@ urlpatterns = [
     path('recent/', QuestionGet.as_view({ 'get': 'get_recent' }), name="get_recent"),
     path('search/', QuestionGet.as_view({ 'get': 'get_matched' }), name="get_matched"),
     path('pengawasan/', QuestionGet.as_view({ 'get': 'get_privileged' }), name="get_question_list_pengawasan"),
+    path('field-values/', QuestionGet.as_view({ 'get': 'get_field_values'}), name="get_question_field_values"),
     path('baru/', QuestionPost.as_view(), name="create_question"),
     path('ubah/<uuid:pk>/', QuestionPatch.as_view({'patch': 'patch_mode'}), name="patch_mode_question"),
     path('ubah/judul/<uuid:pk>/', QuestionPatch.as_view({'patch': 'patch_title'}), name="patch_title_question"),

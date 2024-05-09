@@ -11,7 +11,7 @@ from utils.pagination import CustomPageNumberPagination
 
 from validator.services.question import QuestionService
 from validator.serializers import (
-    QuestionRequest, QuestionResponse, BaseQuestion, PaginatedQuestionResponse, QuestionTitleRequest
+    QuestionRequest, QuestionResponse, BaseQuestion, PaginatedQuestionResponse, QuestionTitleRequest, FieldValuesResponse
 )
 
 
@@ -105,12 +105,6 @@ class QuestionGet(ViewSet):
                 description='Specify query filter mode.'
             ),
             OpenApiParameter(
-                name='time_range',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                description='Specify the time range for the query.'
-            ),
-            OpenApiParameter(
                 name='keyword',
                 type=str,
                 location=OpenApiParameter.QUERY,
@@ -135,7 +129,7 @@ class QuestionGet(ViewSet):
         q_filter = request.query_params.get('filter')
         keyword =  request.query_params.get('keyword', '')
 
-        questions = self.service_class.get_privileged(filter=q_filter, 
+        questions = self.service_class.get_privileged(q_filter=q_filter, 
                                                       user=request.user, 
                                                       keyword=keyword)
         serializer = QuestionResponse(questions, many=True)
@@ -187,7 +181,7 @@ class QuestionGet(ViewSet):
         time_range = request.query_params.get('time_range') 
         keyword = request.query_params.get('keyword', '') 
 
-        questions = self.service_class.get_matched(filter=q_filter,
+        questions = self.service_class.get_matched(q_filter=q_filter,
                                                    user=request.user, 
                                                    time_range=time_range, 
                                                    keyword=keyword)
@@ -197,6 +191,16 @@ class QuestionGet(ViewSet):
         page = paginator.paginate_queryset(serializer.data, request)
 
         return paginator.get_paginated_response(page)
+    
+    @extend_schema(
+        description="Returns all unique question fields' values that are attached to available questions.",
+        responses=FieldValuesResponse
+    )
+    def get_field_values(self, request):
+        values = self.service_class.get_field_values(user=request.user)
+        serializer = FieldValuesResponse(values)
+        
+        return Response(serializer.data)
 
 @permission_classes([IsAuthenticated])
 class QuestionPatch(ViewSet):

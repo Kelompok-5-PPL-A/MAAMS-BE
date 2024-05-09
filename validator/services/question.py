@@ -3,6 +3,7 @@ import uuid
 from datetime import (
     datetime, timedelta
 )
+from multiprocessing.managers import BaseManager
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
@@ -12,6 +13,7 @@ from validator.enums import (
     QuestionType, HistoryType, FilterType
 )
 from validator.constants import ErrorMsg
+from validator.dataclasses.field_values import FieldValuesDataClass
 from validator.dataclasses.create_question import CreateQuestionDataClass 
 from validator.exceptions import (
     NotFoundRequestException, ForbiddenRequestException, 
@@ -112,33 +114,36 @@ class QuestionService():
 
         return response
     
-    def get_privileged(self, filter: str, user: CustomUser, keyword: str):
+    def get_privileged(self, q_filter: str, user: CustomUser, keyword: str):
         """
-        Return a list for pengawasan questions by keyword and time range for privileged users.
+        Return a list for pengawasan questions by keyword and filter type for privileged users.
         """
         # allow only superuser/staff (admins) to access resource
-        if not user.is_superuser or not user.is_staff:
+        is_admin = user.is_superuser and user.is_staff
+        if not is_admin:
             raise ForbiddenRequestException(ErrorMsg.FORBIDDEN_GET)
         
-        if not filter: filter = 'semua'
+        if not q_filter: q_filter = 'semua'
         if not keyword: keyword = ''
 
-        clause = self._resolve_filter_type(filter, keyword)
+        clause = self._resolve_filter_type(q_filter, keyword, is_admin)
         
         # query the questions with specified filters     
         mode = Q(mode=QuestionType.PENGAWASAN.value)       
-        questions = Question.objects.filter(mode & clause ).order_by('-created_at').distinct()
+        questions = Question.objects.filter(mode & clause).order_by('-created_at').distinct()
 
         # get all questions matching corresponding filters
         response = self._make_question_response(questions)
 
         return response
     
-    def get_matched(self, filter: str, user: CustomUser, time_range: str, keyword: str):
+    def get_matched(self, q_filter: str, user: CustomUser, time_range: str, keyword: str):
         """
         Returns a list of matched questions corresponding to logged in user with specified filters.
         """
-        if not filter: filter = 'semua'
+        is_admin = user.is_superuser and user.is_staff
+        
+        if not q_filter: q_filter = 'semua'
         if not keyword: keyword = ''
 
         today_datetime = datetime.now()
@@ -147,7 +152,7 @@ class QuestionService():
         # append corresponding user to query
         user_filter = Q(user=user)
 
-        clause = self._resolve_filter_type(filter, keyword)
+        clause = self._resolve_filter_type(q_filter, keyword, is_admin)
 
         time = self._resolve_time_range(time_range.lower(), today_datetime, last_week_datetime)
 
@@ -158,6 +163,41 @@ class QuestionService():
         response = self._make_question_response(questions)
 
         return response
+
+    def get_field_values(self, user: CustomUser) -> FieldValuesDataClass:
+        """
+        Returns all unique field values attached to available questions for search bar dropdown functionality.
+        """
+        is_admin = user.is_superuser and user.is_staff
+
+        questions = Question.objects.all()
+
+        values = {
+            "judul": set(),
+            "topik": set()
+        }
+
+        # extract usernames if user is admin to allow filtering by pengguna
+        if is_admin: values['pengguna'] = set()
+        
+        for question in questions:
+            if is_admin:
+                values['pengguna'].add(question.user.username)
+            values['judul'].add(question.title)
+            # extract list of tags from question
+            tags = [tag.name for tag in question.tags.all()]
+            values['topik'].update(tags)
+
+        response = FieldValuesDataClass(
+            pengguna=[],
+            judul=list(values['judul']), 
+            topik=list(values['topik'])
+        )
+
+        if is_admin:
+            response.pengguna=list(values['pengguna'])    
+
+        return response 
 
     def update_question(self, user: CustomUser, pk: uuid, **fields):
         try:
@@ -239,7 +279,7 @@ class QuestionService():
             
         return response
     
-    def _resolve_filter_type(self, filter: str, keyword: str) -> Q:
+    def _resolve_filter_type(self, filter: str, keyword: str, is_admin: bool) -> Q:
         """
         Returns where clause for questions with specified filters/keywords.
         Only allow superusers/admin to filter by user.
@@ -250,12 +290,16 @@ class QuestionService():
                           Q(user__first_name__icontains=keyword) | 
                           Q(user__last_name__icontains=keyword))
             case FilterType.JUDUL.value:
-                clause = Q(question__icontains=keyword)
+                clause = (Q(title__icontains=keyword) |
+                          Q(question__icontains=keyword))
             case FilterType.TOPIK.value:
                 clause = Q(tags__name__icontains=keyword)
             case FilterType.SEMUA.value:
-                clause = (Q(question__icontains=keyword) | 
+                clause = (Q(title__icontains=keyword) |
+                          Q(question__icontains=keyword) |
                           Q(tags__name__icontains=keyword))
+                if is_admin:
+                    clause |= Q(user__username__icontains=keyword)
             case _:
                 raise InvalidFiltersException(ErrorMsg.INVALID_FILTERS)
         

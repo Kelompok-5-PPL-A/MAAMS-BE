@@ -75,6 +75,10 @@ DEBUG = get_env_value("DEBUG")
 
 ALLOWED_HOSTS = get_env_value("ALLOWED_HOSTS").split(",")
 
+# accomodate sentry headers for front-end service
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = [*default_headers, "baggage", "sentry-trace"]
+
 CORS_ALLOWED_ORIGINS = [
     get_env_value("HOST_FE"),  # Add the origin of your frontend application
 ]

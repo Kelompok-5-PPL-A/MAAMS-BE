@@ -39,6 +39,15 @@ class QuestionResponse(BaseQuestion):
     tags = serializers.ListField(child=serializers.CharField())    
 
 
+class FieldValuesResponse(serializers.Serializer):
+    class Meta:
+        ref_name = 'FieldValues'
+
+    pengguna = serializers.ListField(child=serializers.CharField())
+    judul = serializers.ListField(child=serializers.CharField())
+    topik = serializers.ListField(child=serializers.CharField())
+
+
 class PaginatedQuestionResponse(serializers.Serializer):
     class Meta:
         ref_name = 'QuestionResponsePaginated'
