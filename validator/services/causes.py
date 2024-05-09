@@ -59,10 +59,7 @@ class CausesService:
             prompt = f"Is '{cause.cause}' the cause of '{problem.question}'? Answer using True/False"
         else:
             prev_cause = Causes.objects.filter(problem_id=question_id, row=max_row-1, column=cause.column).first()
-            if prev_cause and prev_cause.cause == cause.cause:
-                prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
-            else:
-                return
+            prompt = f"Is '{cause.cause}' the cause of '{prev_cause.cause}'? Answer using True/False"
 
         if CausesService.api_call(prompt):
             cause.status = True
