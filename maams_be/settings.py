@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
-
+import sentry_sdk
 
 # Setup environment variables.
 # Production & staging environment variables will be stored on Dockerfile
@@ -31,7 +31,7 @@ if env_file:
 active_env = str(os.environ["ENVIRONMENT"])
 # If a new environment is added,
 # check here to load .env file if file is present.
-if active_env == 'DEVELOPMENT':
+if active_env == 'DEVELOPMENT' or active_env == 'LOCAL':
     load_dotenv('./.env.dev')
 elif active_env == 'TESTING':
     load_dotenv('./.env.test')
@@ -41,17 +41,21 @@ def get_env_value(env_variable: str) -> str | int | bool | None:
     Gets environment variables depending on active environment.
     """
     try:
-        value = parse_env_value(os.environ[env_variable])
+        value = parse_env_value(env_variable, os.environ[env_variable])
         return value
     except KeyError:
         error_msg = f'{env_variable} environment variable not set.'
         raise ImproperlyConfigured(error_msg)
 
-def parse_env_value(value: str) -> str | bool | int | None:
+def parse_env_value(key: str, value: str) -> str | bool | int | None:
     """
     Parses environment variable into either bool, strings, ints, or None type.
     """
-    value = value.lower()
+    case_sensitive_keys = ["GROQ_API_KEY"]
+    
+    if key not in case_sensitive_keys:
+        value = value.lower()
+        
     if value == "none": return None             # Checks for None type
     if value in ["0", "false"]: return False    # Checks for bool types
     if value in ["1", "true"]: return True
@@ -74,6 +78,10 @@ SECRET_KEY = get_env_value("SECRET_KEY")
 DEBUG = get_env_value("DEBUG")
 
 ALLOWED_HOSTS = get_env_value("ALLOWED_HOSTS").split(",")
+
+# accomodate sentry headers for front-end service
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = [*default_headers, "baggage", "sentry-trace"]
 
 CORS_ALLOWED_ORIGINS = [
     get_env_value("HOST_FE"),  # Add the origin of your frontend application
@@ -238,4 +246,11 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-OPENAI_API_KEY = get_env_value("OPENAI_API_KEY")
+GROQ_API_KEY = get_env_value("GROQ_API_KEY")
+
+# Sentry
+if active_env == "DEVELOPMENT":
+    sentry_sdk.init(
+        dsn=get_env_value("SENTRY_DSN"),
+        traces_sample_rate=1.0,
+    )

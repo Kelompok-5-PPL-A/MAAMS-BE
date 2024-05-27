@@ -6,7 +6,7 @@ from validator.models.causes import Causes
 from validator.models.question import Question
 from validator.services.causes import CausesService
 from authentication.models import CustomUser
-from validator.serializers import CausesResponse, CausesRequest, BaseCauses
+from validator.serializers import BaseCauses
 import uuid
 import json
 
@@ -46,11 +46,12 @@ class CausesViewTest(APITestCase):
             user=self.user2,
             id=self.question_uuid2,
             question='pertanyaan',
-            mode=Question.ModeChoices.PRIBADI
+            mode=Question.ModeChoices.PENGAWASAN
         )
 
         self.causes_uuid = uuid.uuid4()
         self.causes_uuid2 = uuid.uuid4()
+        self.causes_uuid3 = uuid.uuid4()
 
         self.causes1 = Causes.objects.create(
             problem=self.question1,
@@ -72,6 +73,16 @@ class CausesViewTest(APITestCase):
             status=False
         )
 
+        self.causes3 = Causes.objects.create(
+            problem=self.question1,
+            id=self.causes_uuid3,
+            row=1,
+            column=1,
+            mode=Causes.ModeChoices.PRIBADI,
+            cause='cause',
+            status=False
+        )
+
         self.url_login = reverse('authentication:login')
         self.content_type_login = 'application/json'
         self.valid_credentials_login = {
@@ -90,8 +101,9 @@ class CausesViewTest(APITestCase):
     
         self.post_url = 'validator:create_causes'
         self.get_url = 'validator:get_causes'
-        self.put_url = 'validator:put_causes'
+        self.patch_url = 'validator:patch_causes'
         self.validate_url = 'validator:validate_causes'
+        self.get_list_url = 'validator:get_causes_list'
 
     def test_create_cause_positive(self):
         self.valid_data = {
@@ -129,40 +141,64 @@ class CausesViewTest(APITestCase):
                 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
     
-    def test_put_cause_positive(self):
+    def test_get_causes_list(self):
+        url = reverse(self.get_list_url, kwargs={'question_id': self.question_uuid1})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        cause_ids = [cause['id'] for cause in response.data]
+        self.assertIn(str(self.causes_uuid), cause_ids)
+        self.assertIn(str(self.causes_uuid3), cause_ids)
+        self.assertNotIn(str(self.causes_uuid2), cause_ids)
+
+    def test_get_causes_list_nonexistent_question(self):
+        nonexistent_question_uuid = uuid.uuid4()
+        url = reverse(self.get_list_url, kwargs={'question_id': nonexistent_question_uuid})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_causes_list_forbidden(self):
+        url = reverse(self.get_list_url, kwargs={'question_id': self.question_uuid2})
+        response = self.client.get(url)
+                
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    
+    def test_patch_cause_positive(self):
         self.valid_data = {'question_id': str(self.question_uuid1), 'id':self.causes_uuid, 'row': 2, 'column': 2, 'mode': Causes.ModeChoices.PRIBADI, 'cause': 'Updated Cause'}
 
-        url = reverse(self.put_url, kwargs={'question_id': str(self.question_uuid1), 'pk': str(self.causes_uuid)})
+        url = reverse(self.patch_url, kwargs={'question_id': str(self.question_uuid1), 'pk': str(self.causes_uuid)})
         data = {'question_id': self.question_uuid1, 'id':self.causes_uuid, 'cause': 'Updated Cause'}
-        response = self.client.put(url, data, format='json')
+        response = self.client.patch(url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_put_cause_forbidden(self):
+    def test_patch_cause_forbidden(self):
         self.valid_data = {'question_id': str(self.question_uuid2), 'id':self.causes_uuid2, 'row': 2, 'column': 2, 'mode': Causes.ModeChoices.PENGAWASAN, 'cause': 'Updated Cause'}
 
-        url = reverse(self.put_url, kwargs={'question_id': str(self.question_uuid2), 'pk': str(self.causes_uuid2)})
+        url = reverse(self.patch_url, kwargs={'question_id': str(self.question_uuid2), 'pk': str(self.causes_uuid2)})
         data = {'question_id': self.question_uuid2, 'id':self.causes_uuid2, 'cause': 'Updated Cause'}
-        response = self.client.put(url, data, format='json')
+        response = self.client.patch(url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_put_cause_invalid_data(self):
-        url = reverse(self.put_url, kwargs={'question_id': str(self.question_uuid1), 'pk': self.causes_uuid})
-        self.invalid_data_put = {'problem': self.question_uuid1, 'row': 1, 'column': 1, 'mode': ''}
-        response = self.client.put(url, self.invalid_data_put, format='json')
+    def test_patch_cause_invalid_data(self):
+        url = reverse(self.patch_url, kwargs={'question_id': str(self.question_uuid1), 'pk': self.causes_uuid})
+        self.invalid_data_patch = {'problem': self.question_uuid1, 'row': 1, 'column': 1, 'mode': ''}
+        response = self.client.patch(url, self.invalid_data_patch, format='json')
         
-        serializer = BaseCauses(data=self.invalid_data_put)
+        serializer = BaseCauses(data=self.invalid_data_patch)
         
         self.assertFalse(serializer.is_valid())
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-    def test_put_cause_missing_data(self):
+    def test_patch_cause_missing_data(self):
         non_existing_pk = uuid.uuid4()
-        url = reverse(self.put_url, kwargs={'question_id': str(non_existing_pk), 'pk': str(non_existing_pk)})
-        self.invalid_data_put = {'cause': 'Updated cause'}
-        response = self.client.put(url, self.invalid_data_put, format='json')
+        url = reverse(self.patch_url, kwargs={'question_id': str(non_existing_pk), 'pk': str(non_existing_pk)})
+        self.invalid_data_patch = {'cause': 'Updated cause'}
+        response = self.client.patch(url, self.invalid_data_patch, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
@@ -173,7 +209,7 @@ class CausesViewTest(APITestCase):
     def test_rca_row_equal_1(self):
         with patch.object(CausesService, 'api_call', return_value=True):
             url = reverse(self.validate_url, kwargs={'question_id': self.question_uuid1})
-            response = self.client.post(url)
+            response = self.client.patch(url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.causes1.refresh_from_db()
@@ -184,12 +220,12 @@ class CausesViewTest(APITestCase):
         question_id = uuid.uuid4()
         question = Question.objects.create(pk=question_id, question='Test question')
 
-        Causes.objects.create(problem=question, row=1, column=1, mode='PRIBADI', cause='Cause 1')
-        cause2 = Causes.objects.create(problem=question, row=2, column=1, mode='PRIBADI', cause='Cause 1')
+        Causes.objects.create(problem=question, row=1, column=1, mode='PRIBADI', cause='Cause 1', status=True)
+        cause2 = Causes.objects.create(problem=question, row=2, column=1, mode='PRIBADI', cause='Cause 2')
 
         with patch.object(CausesService, 'api_call', return_value=True):
             url = reverse(self.validate_url, kwargs={'question_id': question_id})
-            response = self.client.post(url)
+            response = self.client.patch(url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         cause2.refresh_from_db()
@@ -200,7 +236,7 @@ class CausesViewTest(APITestCase):
 
         with patch.object(CausesService, 'api_call', return_value=False):
             url = reverse(self.validate_url, kwargs={'question_id': self.question_uuid1})
-            response = self.client.post(url)
+            response = self.client.patch(url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(Causes.objects.get(problem=Question.objects.get(pk=self.question_uuid1), row=2).status)
@@ -259,6 +295,60 @@ class CausesViewTest(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
 
         url = reverse(self.get_url, kwargs={'question_id': self.question_uuid2,'pk': self.causes_uuid2})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_get_cause_list_superuser_forbidden(self):
+        self.superuser = CustomUser.objects.create_superuser('admin', 'admin@example.com', 'adminpassword')
+        
+        response_login = self.client.post(
+            self.url_login,
+            data=json.dumps({'username': 'admin', 'password': 'adminpassword'}),
+            content_type=self.content_type_login,
+        )
+        
+        access_token = response_login.data['access_token']
+        
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        url = reverse(self.get_list_url, kwargs={'question_id': self.question_uuid1})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_cause_list_superuser_positive(self):
+        self.superuser = CustomUser.objects.create_superuser('admin', 'admin@example.com', 'adminpassword')
+        
+        response_login = self.client.post(
+            self.url_login,
+            data=json.dumps({'username': 'admin', 'password': 'adminpassword'}),
+            content_type=self.content_type_login,
+        )
+        
+        access_token = response_login.data['access_token']
+        
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        url = reverse(self.get_list_url, kwargs={'question_id': self.question_uuid2})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_get_cause_list_pengawasan_creator_positive(self):
+        response_login = self.client.post(
+            self.url_login,
+            data=json.dumps({
+                'username': 'test-username2',
+                'password': 'test-password'}),
+            content_type=self.content_type_login,
+        )
+        
+        access_token = response_login.data['access_token']
+        
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        url = reverse(self.get_list_url, kwargs={'question_id': self.question_uuid2})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)

@@ -1,5 +1,4 @@
 from rest_framework import serializers
-
 from validator.models.causes import Causes
 from validator.models.question import Question
 
@@ -12,25 +11,51 @@ class BaseQuestion(serializers.Serializer):
         
     mode = serializers.ChoiceField(choices=MODE_CHOICES)
     
+class QuestionTitleRequest(serializers.Serializer):
+    class Meta:
+        ref_name = 'QuestionTitleRequest'
+        
+    title = serializers.CharField(max_length=40)
+    
+class QuestionTagRequest(serializers.Serializer):
+    class Meta:
+        ref_name = 'QuestionTagRequest'
+        
+    tags = serializers.ListField(
+        min_length=1,
+        max_length=3,
+        child=serializers.CharField(max_length=10))    
 
 class QuestionRequest(BaseQuestion):
     class Meta:
         ref_name = 'QuestionRequest'
 
-    title = serializers.CharField()
+    title = serializers.CharField(max_length=40)
     question = serializers.CharField()
-    tags = serializers.ListField(child=serializers.CharField())    
-
+    tags = serializers.ListField(
+        min_length=1,
+        max_length=3,
+        child=serializers.CharField(max_length=10))    
+    
 class QuestionResponse(BaseQuestion):
     class Meta:
         ref_name = 'QuestionResponse'
     
     id = serializers.UUIDField()
-    title = serializers.CharField()
+    title = serializers.CharField(max_length=40)
     question = serializers.CharField()
     created_at = serializers.DateTimeField()
     username = serializers.CharField()
     tags = serializers.ListField(child=serializers.CharField())    
+
+
+class FieldValuesResponse(serializers.Serializer):
+    class Meta:
+        ref_name = 'FieldValues'
+
+    pengguna = serializers.ListField(child=serializers.CharField())
+    judul = serializers.ListField(child=serializers.CharField())
+    topik = serializers.ListField(child=serializers.CharField())
 
 
 class PaginatedQuestionResponse(serializers.Serializer):

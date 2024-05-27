@@ -1,19 +1,25 @@
-from collections.abc import Iterable
 from typing import List
 import uuid
 from datetime import (
     datetime, timedelta
 )
+from multiprocessing.managers import BaseManager
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
 from authentication.models import CustomUser
 
-from validator.enums import HistoryType
+from validator.enums import (
+    QuestionType, HistoryType, FilterType
+)
 from validator.constants import ErrorMsg
+from validator.dataclasses.field_values import FieldValuesDataClass
 from validator.dataclasses.create_question import CreateQuestionDataClass 
-from validator.enums import QuestionType
 from validator.exceptions import (
-    NotFoundRequestException, ForbiddenRequestException, InvalidTimeRangeRequestException
+    NotFoundRequestException, ForbiddenRequestException, 
+    InvalidTimeRangeRequestException, InvalidTagException,
+    InvalidFiltersException, ValueNotUpdatedException,
+    UniqueTagException
 )
 from validator.models.causes import Causes
 from validator.models.question import Question
@@ -24,33 +30,17 @@ from validator.serializers import Question
 class QuestionService():
     
     def create(self, user: CustomUser, title:str, question: str, mode: str, tags: List[str]):
-        tags_object = []
-        
-        for tag_name in tags:
-            try:
-                tag = Tag.objects.get(name=tag_name)
-            except Tag.DoesNotExist:
-                tag = Tag.objects.create(name=tag_name)
-            finally:
-                tags_object.append(tag)
+        tags_object = self._validate_tags(tags)
                 
         question_object = Question.objects.create(user=user, title=title, 
                                                   question=question, mode=mode)
 
         for tag in tags_object:
             question_object.tags.add(tag)
-        
-        tags = [tag.name for tag in question_object.tags.all()]
+            
+        response = self._make_question_response([question_object])
 
-        return CreateQuestionDataClass(
-            username = question_object.user.username,
-            id = question_object.id,
-            title=question_object.title,
-            question = question_object.question,
-            created_at = question_object.created_at,
-            mode = question_object.mode,
-            tags=tags
-        )
+        return response[0]
     
     def get(self, user:CustomUser, pk:uuid):
         try:
@@ -66,7 +56,7 @@ class QuestionService():
         if question_object.mode == Question.ModeChoices.PENGAWASAN and not (user.is_staff or user.is_superuser or user.uuid == user_id):
             raise ForbiddenRequestException(ErrorMsg.FORBIDDEN_GET)
         
-        response = self.make_question_response([question_object])
+        response = self._make_question_response([question_object])
 
         return response[0]
     
@@ -88,7 +78,7 @@ class QuestionService():
                                                     ).order_by('-created_at')
                 
         # get all questions filtered by user
-        response = self.make_question_response(questions)
+        response = self._make_question_response(questions)
 
         return response
     
@@ -96,95 +86,134 @@ class QuestionService():
         recent_question = Question.objects.filter(user=user).order_by('-created_at').first()
 
         if (recent_question):
-            response = self.make_question_response([recent_question])
+            response = self._make_question_response([recent_question])
             response = response[0]
         else:
             response = recent_question
 
         return response
     
-    def get_privileged(self, user: CustomUser, time_range: str, keyword: str):
+    def get_privileged(self, q_filter: str, user: CustomUser, keyword: str):
         """
-        Return a list for pengawasan questions by keyword and time range for privileged users.
+        Return a list for pengawasan questions by keyword and filter type for privileged users.
         """
         # allow only superuser/staff (admins) to access resource
-        if not user.is_superuser or not user.is_staff:
+        is_admin = user.is_superuser and user.is_staff
+        if not is_admin:
             raise ForbiddenRequestException(ErrorMsg.FORBIDDEN_GET)
         
-        if not keyword:
-            keyword = ''
-            
-        today_datetime = datetime.now()
-        last_week_datetime = today_datetime - timedelta(days=7)
+        if not q_filter: q_filter = 'semua'
+        if not keyword: keyword = ''
+
+        clause = self._resolve_filter_type(q_filter, keyword, is_admin)
         
-        # get all publicly available questions of mode "PENGAWASAN", depending on time range
-        match time_range:
-            case HistoryType.LAST_WEEK.value:
-                questions = Question.objects.filter(question__icontains=keyword,
-                                                    mode=QuestionType.PENGAWASAN.value,
-                                                    created_at__range=[last_week_datetime, today_datetime]
-                                                    ).order_by('-created_at')
-            case HistoryType.OLDER.value:
-                questions = Question.objects.filter(question__icontains=keyword,
-                                                    mode=QuestionType.PENGAWASAN.value,
-                                                    created_at__lt=last_week_datetime
-                                                    ).order_by('-created_at')
-            case _:
-                raise InvalidTimeRangeRequestException(ErrorMsg.INVALID_TIME_RANGE)    
-        response = self.make_question_response(questions)
+        # query the questions with specified filters     
+        mode = Q(mode=QuestionType.PENGAWASAN.value)       
+        questions = Question.objects.filter(mode & clause).order_by('-created_at').distinct()
+
+        # get all questions matching corresponding filters
+        response = self._make_question_response(questions)
 
         return response
     
-    def get_matched(self, user: CustomUser, time_range: str, keyword: str):
+    def get_matched(self, q_filter: str, user: CustomUser, time_range: str, keyword: str):
         """
-        Returns a list of matched questions corresponding to a specified user.
+        Returns a list of matched questions corresponding to logged in user with specified filters.
         """
+        is_admin = user.is_superuser and user.is_staff
+        
+        if not q_filter: q_filter = 'semua'
+        if not keyword: keyword = ''
 
         today_datetime = datetime.now()
         last_week_datetime = today_datetime - timedelta(days=7)
-        
-        # get all publicly available questions of mode "PENGAWASAN", depending on time range
-        if time_range == HistoryType.LAST_WEEK.value:
-            questions = Question.objects.filter(user=user, created_at__range=[last_week_datetime, today_datetime],
-                                                question__icontains=keyword,
-                                                ).order_by('-created_at')
-        elif time_range == HistoryType.OLDER.value:
-            questions = Question.objects.filter(user=user, created_at__lt=last_week_datetime,
-                                                question__icontains=keyword,
-                                                ).order_by('-created_at')
-        else:
-            raise InvalidTimeRangeRequestException(ErrorMsg.INVALID_TIME_RANGE)
-             
 
-        # get all questions filtered by user
-        response = self.make_question_response(questions)
+        # append corresponding user to query
+        user_filter = Q(user=user)
+
+        clause = self._resolve_filter_type(q_filter, keyword, is_admin)
+
+        time = self._resolve_time_range(time_range.lower(), today_datetime, last_week_datetime)
+
+        # query the questions with specified filters            
+        questions = Question.objects.filter(user_filter & clause & time).order_by('-created_at').distinct()
+
+        # get all questions matching corresponding filters
+        response = self._make_question_response(questions)
 
         return response
 
-    def update_mode(self, user:CustomUser, mode:str, pk:uuid):
+    def get_field_values(self, user: CustomUser) -> FieldValuesDataClass:
+        """
+        Returns all unique field values attached to available questions for search bar dropdown functionality.
+        """
+        is_admin = user.is_superuser and user.is_staff
+
+        questions = Question.objects.all()
+
+        values = {
+            "judul": set(),
+            "topik": set()
+        }
+
+        # extract usernames if user is admin to allow filtering by pengguna
+        if is_admin: values['pengguna'] = set()
+        
+        for question in questions:
+            if is_admin:
+                values['pengguna'].add(question.user.username)
+            values['judul'].add(question.title)
+            # extract list of tags from question
+            tags = [tag.name for tag in question.tags.all()]
+            values['topik'].update(tags)
+
+        response = FieldValuesDataClass(
+            pengguna=[],
+            judul=list(values['judul']), 
+            topik=list(values['topik'])
+        )
+
+        if is_admin:
+            response.pengguna=list(values['pengguna'])    
+
+        return response 
+
+    def update_question(self, user: CustomUser, pk: uuid, **fields):
         try:
             question_object = Question.objects.get(pk=pk)
-        except ObjectDoesNotExist:
+        except Question.DoesNotExist:
             raise NotFoundRequestException(ErrorMsg.NOT_FOUND)
         
-        user_id = question_object.user.uuid
-
-        if user.uuid != user_id:
+        if user.uuid != question_object.user.uuid:
             raise ForbiddenRequestException(ErrorMsg.FORBIDDEN_UPDATE)
         
-        question_object.mode = mode
-        question_object.save()
+        updated = False
         
-        tags = [tag.name for tag in question_object.tags.all()]
-        return CreateQuestionDataClass(
-            username = question_object.user.username,
-            id = question_object.id,
-            title=question_object.title,
-            question = question_object.question,
-            created_at = question_object.created_at,
-            mode = question_object.mode,
-            tags=tags
-        )
+        if 'tags' in fields:
+            new_tags = fields.pop('tags')
+            
+            tags_object = self._validate_tags(new_tags)
+            
+            current_tags = set(question_object.tags.all())
+            new_tags_set = set(tags_object)
+            
+            if current_tags != new_tags_set:
+                question_object.tags.set(new_tags_set)
+                updated = True
+            
+        for field, new_value in fields.items():
+            if field != 'tags' and getattr(question_object, field) != new_value:
+                setattr(question_object, field, new_value)
+                updated = True
+                
+        question_object.save()
+                
+        if not updated:
+            raise ValueNotUpdatedException(ErrorMsg.VALUE_NOT_UPDATED)
+
+        response = self._make_question_response([question_object])
+
+        return response[0]
         
     def delete(self, user:CustomUser, pk:uuid):
         try:
@@ -197,26 +226,18 @@ class QuestionService():
         if user.uuid != user_id:
             raise ForbiddenRequestException(ErrorMsg.FORBIDDEN_DELETE)
         
-        tags = [tag.name for tag in question_object.tags.all()]
-        question_data = CreateQuestionDataClass(
-            username = question_object.user.username,
-            id = question_object.id,
-            title=question_object.title,
-            question = question_object.question,
-            created_at = question_object.created_at,
-            mode = question_object.mode,
-            tags=tags
-        )
+        response = self._make_question_response([question_object])
+
         related_causes = Causes.objects.filter(problem=question_object)
         related_causes.delete()
         question_object.delete()
         
-        return question_data 
+        return response[0]    
     
     """
     Utility functions.
     """
-    def make_question_response(self, questions) -> list:
+    def _make_question_response(self, questions) -> list:
         response = []
         if len(questions) == 0:
             return response
@@ -234,3 +255,59 @@ class QuestionService():
             response.append(item)
             
         return response
+    
+    def _resolve_filter_type(self, filter: str, keyword: str, is_admin: bool) -> Q:
+        """
+        Returns where clause for questions with specified filters/keywords.
+        Only allow superusers/admin to filter by user.
+        """
+        match filter.lower():
+            case FilterType.PENGGUNA.value:
+                clause = (Q(user__username__icontains=keyword) | 
+                          Q(user__first_name__icontains=keyword) | 
+                          Q(user__last_name__icontains=keyword))
+            case FilterType.JUDUL.value:
+                clause = (Q(title__icontains=keyword) |
+                          Q(question__icontains=keyword))
+            case FilterType.TOPIK.value:
+                clause = Q(tags__name__icontains=keyword)
+            case FilterType.SEMUA.value:
+                clause = (Q(title__icontains=keyword) |
+                          Q(question__icontains=keyword) |
+                          Q(tags__name__icontains=keyword))
+                if is_admin:
+                    clause |= Q(user__username__icontains=keyword)
+            case _:
+                raise InvalidFiltersException(ErrorMsg.INVALID_FILTERS)
+        
+        return clause
+    
+    def _resolve_time_range(self, time_range: str, today_datetime: datetime, last_week_datetime: datetime) -> Q:
+        """
+        Returns where clause for questions with specified time range.
+        """
+        match time_range.lower():
+            case HistoryType.LAST_WEEK.value:
+                time = Q(created_at__range=[last_week_datetime, today_datetime])
+            case HistoryType.OLDER.value:
+                time = Q(created_at__lt=last_week_datetime)
+            case _:
+                raise InvalidTimeRangeRequestException(ErrorMsg.INVALID_TIME_RANGE)
+        
+        return time
+    
+    def _validate_tags(self, new_tags: List[str]):
+        tags_object = []
+        
+        for tag_name in new_tags:
+                try:
+                    tag = Tag.objects.get(name=tag_name)
+                    if tag in tags_object:
+                        raise UniqueTagException(ErrorMsg.TAG_MUST_BE_UNIQUE)
+                except Tag.DoesNotExist:
+                    tag = Tag.objects.create(name=tag_name)
+                finally:
+                    tags_object.append(tag)
+        
+        return tags_object
+

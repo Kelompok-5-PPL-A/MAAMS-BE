@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
 from validator.services.causes import CausesService
 from validator.serializers import CausesRequest, CausesResponse, BaseCauses
@@ -23,7 +24,7 @@ class CausesPost(APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 @permission_classes([IsAuthenticated])
-class CausesGet(APIView):
+class CausesGet(ViewSet):
     @extend_schema(
         description='Request and Response data to get a cause',
         responses=CausesResponse,
@@ -33,18 +34,28 @@ class CausesGet(APIView):
         serializer = CausesResponse(cause)
 
         return Response(serializer.data)
+    
+    @extend_schema(
+        description='Request and Response data to get list of causes based on the question',
+        responses=CausesResponse,
+    )
+    def get_list(self, request, question_id):
+        cause = CausesService.get_list(self=CausesService, user=request.user, question_id=question_id)
+        serializer = CausesResponse(cause, many=True)
+
+        return Response(serializer.data)
 
 @permission_classes([IsAuthenticated])
-class CausesPut(APIView):
+class CausesPatch(ViewSet):
     @extend_schema(
         description='Request and Response data for updating a cause',
         request=BaseCauses,
         responses=CausesResponse,
     )
-    def put(self, request, question_id, pk):
+    def patch_cause(self, request, question_id, pk):
         request_serializer = BaseCauses(data=request.data)
         request_serializer.is_valid(raise_exception=True)
-        cause = CausesService.update(self=CausesService, user=request.user, question_id=question_id, pk=pk, **request_serializer.validated_data)
+        cause = CausesService.patch_cause(self=CausesService, user=request.user, question_id=question_id, pk=pk, **request_serializer.validated_data)
         response_serializer = CausesResponse(cause)
 
         return Response(response_serializer.data)
@@ -55,7 +66,7 @@ class ValidateView(APIView):
         description='Run Root Cause Analysis for a specific question and row',
         responses=CausesResponse,
     )
-    def post(self, request, question_id):
+    def patch(self, request, question_id):
         updated_causes = CausesService.validate(self=CausesService, question_id=question_id)
         serializer = CausesResponse(updated_causes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

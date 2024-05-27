@@ -53,7 +53,7 @@
 
     ```.env
     # ACTIVE ENVIRONMENT
-    ENVIRONMENT=DEVELOPMENT
+    ENVIRONMENT=LOCAL
     ```
 
     `.env.dev`:
@@ -72,7 +72,8 @@
     DB_PASSWORD=<your local DB password>
     DB_NAME=<your local DB name>
 
-    OPENAI_API_KEY=<your openAI API token>
+    GROQ_API_KEY=<your CLAUDE API token>
+    SENTRY_DSN=<your sentry dsn>
     ```
 
 5. Initialize database tables

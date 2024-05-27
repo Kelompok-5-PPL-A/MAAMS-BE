@@ -101,7 +101,7 @@ Build-Staging:
   script:
     - ls -a
     - echo $DOCKER_PASSWORD | docker login -u $REGISTRY_USER --password-stdin
-    - docker build --build-arg ENVIRONMENT=$STAGING --build-arg ALLOWED_HOSTS=$ALLOWED_HOSTS --build-arg SECRET_KEY=$SECRET_KEY --build-arg DEBUG=True --build-arg DB_HOST=$DB_HOST_STAGING --build-arg DB_NAME=$DB_NAME_STAGING --build-arg DB_PORT=$DB_PORT_STAGING --build-arg DB_USER=$DB_USER_STAGING --build-arg DB_PASSWORD=$DB_PASSWORD_STAGING --build-arg HOST_FE=$HOST_FE --build-arg OPENAI_API_KEY=$OPENAI_API_KEY -t $REGISTRY_USER/$IMAGE_NAME:$IMAGE_TAG .
+    - docker build --build-arg ENVIRONMENT=$STAGING --build-arg ALLOWED_HOSTS=$ALLOWED_HOSTS --build-arg SECRET_KEY=$SECRET_KEY --build-arg DEBUG=True --build-arg DB_HOST=$DB_HOST_STAGING --build-arg DB_NAME=$DB_NAME_STAGING --build-arg DB_PORT=$DB_PORT_STAGING --build-arg DB_USER=$DB_USER_STAGING --build-arg DB_PASSWORD=$DB_PASSWORD_STAGING --build-arg HOST_FE=$HOST_FE --build-arg GROQ_API_KEY=$GROQ_API_KEY --build-arg SENTRY_DSN=$SENTRY_DSN -t $REGISTRY_USER/$IMAGE_NAME:$IMAGE_TAG .
     - docker push $REGISTRY_USER/$IMAGE_NAME:$IMAGE_TAG
   tags:
     - dind

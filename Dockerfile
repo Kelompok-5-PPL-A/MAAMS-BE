@@ -13,7 +13,8 @@ ARG DB_PORT
 ARG DB_USER
 ARG DB_PASSWORD
 ARG HOST_FE
-ARG OPENAI_API_KEY
+ARG GROQ_API_KEY
+ARG SENTRY_DSN
 
 # Required environment variables as build arguments here
 ENV ENVIRONMENT ${ENVIRONMENT}
@@ -26,7 +27,8 @@ ENV DB_PORT ${DB_PORT}
 ENV DB_USER ${DB_USER}
 ENV DB_PASSWORD ${DB_PASSWORD}
 ENV HOST_FE ${HOST_FE}
-ENV OPENAI_API_KEY ${OPENAI_API_KEY}
+ENV GROQ_API_KEY ${GROQ_API_KEY}
+ENV SENTRY_DSN ${SENTRY_DSN}
 
 # Keeps Python from generating .pyc files in the container
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -48,4 +50,4 @@ RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /
 USER appuser
 
 # During debugging, this entry point will be overridden. For more information, please refer to https://aka.ms/vscode-docker-python-debug
-CMD ["gunicorn", "--log-level", "debug", "--bind", "0.0.0.0:8000", "maams_be.wsgi"]
+CMD ["gunicorn", "--workers", "3", "--log-level", "debug", "--bind", "0.0.0.0:8000", "maams_be.wsgi"]

@@ -13,10 +13,11 @@ from validator.models.question import Question
 from validator.models.causes import Causes
 from validator.models.tag import Tag
 from validator.serializers import (
-    QuestionRequest, BaseQuestion
+    QuestionRequest, BaseQuestion, QuestionTitleRequest
 )
 
 from django.core.exceptions import ObjectDoesNotExist
+from validator.constants import ErrorMsg
 
 class QuestionViewTest(APITestCase):
     def setUp(self):
@@ -48,31 +49,74 @@ class QuestionViewTest(APITestCase):
         
         # valid data
         self.valid_data = {
-            'title': 'Question 1',
+            'title': 'test',
             'question': 'Test question', 
-            'mode': Question.ModeChoices.PRIBADI,
-            'tags': ['economy', 'analysis']
+            'mode': 'PRIBADI',
+            'tags': ['analisis', 'pribadi']
         }
-        self.valid_data_put = {'id': self.question_uuid, 'mode': Question.ModeChoices.PENGAWASAN}
+        self.valid_data_patch_mode = {'id': self.question_uuid, 'mode': Question.ModeChoices.PENGAWASAN}
+        self.valid_data_patch_title = {'id': self.question_uuid, 'title': 'judul baru'}
+        self.valid_data_patch_tags = {'id': self.question_uuid, 'tags': ['analisis', 'pribadi']}
 
         # invalid data for post
         self.invalid_data_missing = {'question': 'Test question missing', 'mode': ''}
         self.invalid_data = {'question': 'Test question invalid', 'mode': 'invalid'}
+        self.invalid_data_empty_tags = {
+            'title': 'test',
+            'question': 'Test question empty tags', 
+            'mode': 'PRIBADI',
+            'tags': []
+        }
+        self.invalid_data_duplicate_tags = {
+            'title': 'test',
+            'question': 'Test question duplicate tags', 
+            'mode': 'PRIBADI',
+            'tags': ['analisis', 'analisis']
+        }
+        self.invalid_data_too_many_tags = {
+            'title': 'test',
+            'question': 'Test question too many tags', 
+            'mode': 'PRIBADI',
+            'tags': ['analisis', 'pribadi', 'sosial', 'politik']
+        }
+        self.invalid_data_too_long_tag = {
+            'title': 'test',
+            'question': 'Test question too long tags', 
+            'mode': 'PRIBADI',
+            'tags': ['analisisiiiiiiiiiiiiiiiis']
+        }
+
+        # invalid data for patch mode
+        self.invalid_data_patch_mode = {'id': self.question_uuid, 'mode': 'invalid'}
+        self.invalid_data_patch_mode_missing = {'id': self.question_uuid, 'mode': ''}
+        self.invalid_data_patch_mode_user = {'id': self.question_uuid2, 'mode': Question.ModeChoices.PENGAWASAN}
+        self.invalid_data_patch_mode_same = {'id': self.question_uuid, 'mode': Question.ModeChoices.PRIBADI}
         
-        # invalid data for put
-        self.invalid_data_put = {'id': self.question_uuid, 'mode': 'invalid'}
-        self.invalid_data_put_missing = {'id': self.question_uuid, 'mode': ''}
-        self.invalid_data_put_user = {'id': self.question_uuid2, 'mode': Question.ModeChoices.PENGAWASAN}
+        # invalid data for patch title
+        self.invalid_data_patch_title = {'id': self.question_uuid, 'title': 'This title has more than 40 characters in it'}
+        self.invalid_data_patch_title_missing = {'id': self.question_uuid, 'title': ''}
+        self.invalid_data_patch_title_user = {'id': self.question_uuid2, 'title': 'something'}
+        self.invalid_data_patch_title_same = {'id': self.question_uuid, 'title': 'pertanyaan 1'}
         
+        #invalid data for patch 
+        self.invalid_data_patch_tags_same = {'id': self.question_uuid, 'tags': ['tag2', 'tag1']}
+        self.invalid_data_patch_tags_too_long = {'id': self.question_uuid, 'tags': ['analisisiiiiiiiiiiiiiiiis']}        
+        self.invalid_data_patch_tags_too_many = {'id': self.question_uuid, 'tags': ['analisis', 'pribadi', 'sosial', 'politik']}        
+        self.invalid_data_patch_tags_duplicate = {'id': self.question_uuid, 'tags': ['analisis', 'analisis']}
+        self.invalid_data_patch_tags_empty = {'id': self.question_uuid, 'tags': []}
+
         # urls
         self.post_url = 'validator:create_question'
         self.get_url = 'validator:get_question'
         self.get_all = 'validator:get_question_list'
         self.get_pengawasan = 'validator:get_question_list_pengawasan'
-        self.put_url = 'validator:put_question'
+        self.patch_mode_url = 'validator:patch_mode_question'
+        self.patch_title_url = 'validator:patch_title_question'
+        self.patch_tags_url = 'validator:patch_tags_question'
         self.delete_url = 'validator:delete_question'
         self.get_matched = 'validator:get_matched'
         self.get_recent = 'validator:get_recent'
+        self.get_field_values = 'validator:get_question_field_values'
 
         """
         Create some tags
@@ -152,7 +196,7 @@ class QuestionViewTest(APITestCase):
             content_type=self.content_type_login,
         )
         
-        access_token = response_login.data['access_token']  # Extracting access token from login response
+        access_token = response_login.data['access_token']
         
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
         
@@ -205,6 +249,28 @@ class QuestionViewTest(APITestCase):
         
         self.assertFalse(serializer.is_valid())
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_post_duplicate_tags(self):
+        url = reverse(self.post_url)
+        response = self.client.post(url, self.invalid_data_duplicate_tags, format='json')        
+
+        self.assertEqual(response.data['detail'], ErrorMsg.TAG_MUST_BE_UNIQUE)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_post_empty_tags(self):
+        url = reverse(self.post_url)
+        response = self.client.post(url, self.invalid_data_empty_tags, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_post_too_long_tags(self):
+        url = reverse(self.post_url)
+        response = self.client.post(url, self.invalid_data_too_many_tags, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_post_too_many_tags(self):
+        url = reverse(self.post_url)
+        response = self.client.post(url, self.invalid_data_too_long_tag, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
     def test_post_question_invalid_value(self):
         url = reverse(self.post_url)
@@ -215,47 +281,144 @@ class QuestionViewTest(APITestCase):
         self.assertFalse(serializer.is_valid())
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_put_question(self):
-        url = reverse(self.put_url, kwargs={'pk': self.question_uuid})
-        response = self.client.put(url, self.valid_data_put, format='json')
+    def test_patch_mode_question(self):
+        url = reverse(self.patch_mode_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.valid_data_patch_mode, format='json')
         
         updated_question = Question.objects.get(pk=self.question_uuid)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(updated_question.mode, Question.ModeChoices.PENGAWASAN)
+            
+    def test_patch_mode_same_value(self):
+        url = reverse(self.patch_mode_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_mode_same, format='json')
         
-    def test_put_question_invalid_value(self):
-        url = reverse(self.put_url, kwargs={'pk': self.question_uuid})
-        response = self.client.put(url, self.invalid_data_put, format='json')
+        self.assertEqual(response.data['detail'], ErrorMsg.VALUE_NOT_UPDATED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
-        serializer = BaseQuestion(data=self.invalid_data_put)
+    def test_patch_mode_question_invalid_value(self):
+        url = reverse(self.patch_mode_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_mode, format='json')
+        
+        serializer = BaseQuestion(data=self.invalid_data_patch_mode)
         
         self.assertFalse(serializer.is_valid())
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
-    def test_put_question_missing_value(self):
-        url = reverse(self.put_url, kwargs={'pk': self.question_uuid})
-        response = self.client.put(url, self.invalid_data_put_missing, format='json')
+    def test_patch_mode_question_missing_value(self):
+        url = reverse(self.patch_mode_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_mode_missing, format='json')
         
-        serializer = BaseQuestion(data=self.invalid_data_put_missing)
+        serializer = BaseQuestion(data=self.invalid_data_patch_mode_missing)
 
         self.assertFalse(serializer.is_valid())
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
-    def test_put_nonexisting_question(self):
+    def test_patch_mode_nonexisting_question(self):
         non_existing_pk = uuid.uuid4()
-        url = reverse(self.put_url, kwargs={'pk': non_existing_pk})
-        response = self.client.put(url, self.valid_data_put, format='json')
+        url = reverse(self.patch_mode_url, kwargs={'pk': non_existing_pk})
+        response = self.client.patch(url, self.valid_data_patch_mode, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
     
-    def test_put_forbidden(self):
-        url = reverse(self.put_url, kwargs={'pk': self.question_uuid2})
-        response = self.client.put(url, self.valid_data_put, format='json')
+    def test_patch_mode_forbidden(self):
+        url = reverse(self.patch_mode_url, kwargs={'pk': self.question_uuid2})
+        response = self.client.patch(url, self.valid_data_patch_mode, format='json')
         
         self.assertEqual(response.data['detail'], "Pengguna tidak diizinkan untuk mengubah analisis ini.")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         
+    def test_patch_title_question(self):
+        url = reverse(self.patch_title_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.valid_data_patch_title, format='json')
+        
+        updated_question = Question.objects.get(pk=self.question_uuid)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(updated_question.title, 'judul baru')
+    
+    def test_patch_title_same_value(self):
+        url = reverse(self.patch_title_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_title_same, format='json')
+        
+        self.assertEqual(response.data['detail'], ErrorMsg.VALUE_NOT_UPDATED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_title_question_invalid_value(self):
+        url = reverse(self.patch_title_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_title, format='json')
+        
+        serializer = QuestionTitleRequest(data=self.invalid_data_patch_title)
+        
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_title_question_missing_value(self):
+        url = reverse(self.patch_title_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_title_missing, format='json')
+        
+        serializer = QuestionTitleRequest(data=self.invalid_data_patch_title_missing)
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_title_nonexisting_question(self):
+        non_existing_pk = uuid.uuid4()
+        url = reverse(self.patch_title_url, kwargs={'pk': non_existing_pk})
+        response = self.client.patch(url, self.valid_data_patch_title, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    
+    def test_patch_title_forbidden(self):
+        url = reverse(self.patch_title_url, kwargs={'pk': self.question_uuid2})
+        response = self.client.patch(url, self.valid_data_patch_title, format='json')
+        
+        self.assertEqual(response.data['detail'], "Pengguna tidak diizinkan untuk mengubah analisis ini.")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        
+    def test_patch_tags(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.valid_data_patch_tags, format='json')
+        updated_question = Question.objects.get(pk=self.question_uuid)
+        updated_tag_names = [tag.name for tag in updated_question.tags.all()]
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['tags'], updated_tag_names)
+        
+    def test_patch_tags_same_value(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_tags_same, format='json')
+        self.assertEqual(response.data['detail'], ErrorMsg.VALUE_NOT_UPDATED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    def test_patch_tags_too_long(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_tags_too_long, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_tags_too_many(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_tags_too_many, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_tags_duplicate(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_tags_duplicate, format='json')
+        self.assertEqual(response.data['detail'], ErrorMsg.TAG_MUST_BE_UNIQUE)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_tags_empty(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid})
+        response = self.client.patch(url, self.invalid_data_patch_tags_empty, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+    def test_patch_tags_forbidden(self):
+        url = reverse(self.patch_tags_url, kwargs={'pk': self.question_uuid2})
+        response = self.client.patch(url, self.valid_data_patch_tags, format='json')
+        self.assertEqual(response.data['detail'], "Pengguna tidak diizinkan untuk mengubah analisis ini.")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            
     def test_delete_question(self):
         url = reverse(self.delete_url, kwargs={'pk': self.question_uuid})
         response = self.client.delete(url)
@@ -309,7 +472,6 @@ class QuestionViewTest(APITestCase):
     def test_get_recent_question(self):
         Question.objects.all().delete()
         url_post = reverse(self.post_url)
-        
         response__old_post = self.client.post(url_post, self.valid_data, format='json')
         old_post_id = Question.objects.get(id=response__old_post.data['id']).id
         
@@ -338,23 +500,55 @@ class QuestionViewTest(APITestCase):
         self.user1.save()
 
         url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?time_range=last_week')
-        questions = Question.objects.filter(mode=QuestionType.PENGAWASAN.value)
+        response = self.client.get(url + '?filter=semua&keyword=')
+        questions = Question.objects.filter(mode=QuestionType.PENGAWASAN.value, )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], len(questions))
+   
 
-    def test_get_pengawasan_older(self):
+    def test_get_pengawasan_filter_by_pengguna(self):
         # reset questions
         Question.objects.all().delete()
 
         url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?time_range=older')
+        response = self.client.get(url + '?filter=pengguna&keyword=test&')
         questions = Question.objects.filter(mode=QuestionType.PENGAWASAN.value)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], len(questions))
 
+    def test_get_pengawasan_filter_by_topik(self):
+        # reset questions
+        Question.objects.all().delete()
+
+        url = reverse(self.get_pengawasan)
+        response = self.client.get(url + '?filter=topik&keyword=tag1')
+        questions = Question.objects.filter(mode=QuestionType.PENGAWASAN.value)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], len(questions))
+
+    def test_get_pengawasan_filter_by_judul(self):
+        # reset questions
+        Question.objects.all().delete()
+
+        url = reverse(self.get_pengawasan)
+        response = self.client.get(url + '?filter=judul&keyword=pertanyaan')
+        questions = Question.objects.filter(mode=QuestionType.PENGAWASAN.value)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], len(questions))
+
+    def test_get_pengawasan_invalid_filter(self):
+        # reset questions
+        Question.objects.all().delete()
+
+        url = reverse(self.get_pengawasan)
+        response = self.client.get(url + '?filter=invalid&keyword=pertanyaan')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
     def test_get_pengawasan_questions_forbidden(self):
         # reset user status
         self.user1.is_superuser = False
@@ -374,24 +568,18 @@ class QuestionViewTest(APITestCase):
         self.user1.save()
         
         url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?time_range=last_week')
+        response = self.client.get(url + '?filter=semua')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
         self.assertIn('results', response.data)
     
-    def test_get_pengawasan_invalid_time_range(self):
-        url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?keyword=test&time_range=invalid_format')
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], "Invalid time range format.")
-    
+   
     def test_get_pengawasan_unauthorized_access(self):
         # Remove authentication
         self.client.credentials()
         url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?keyword=test&time_range=last_week')
+        response = self.client.get(url + '?filter=semua&keyword=test')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data['detail'], "Authentication credentials were not provided.")
@@ -403,7 +591,7 @@ class QuestionViewTest(APITestCase):
         self.user1.save()
         
         url = reverse(self.get_pengawasan)
-        response = self.client.get(url + '?keyword=&time_range=last_week')
+        response = self.client.get(url + '?filter=semua&keyword=')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
@@ -417,7 +605,7 @@ class QuestionViewTest(APITestCase):
     def test_get_all_questions_last_week(self):
         Question.objects.all().delete()
         url = reverse(self.get_all)
-        response = self.client.get(url + '?time_range=last_week')
+        response = self.client.get(url + '?filter=semua&time_range=last_week')
         questions = Question.objects.filter(user=self.user1)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -426,7 +614,7 @@ class QuestionViewTest(APITestCase):
     def test_get_all_questions_older(self):
         Question.objects.all().delete()
         url = reverse(self.get_all)
-        response = self.client.get(url + '?time_range=older')
+        response = self.client.get(url + '?filter=semua&time_range=older')
         questions = Question.objects.filter(user=self.user1)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -434,7 +622,7 @@ class QuestionViewTest(APITestCase):
         
     def test_get_matched(self):
         url = reverse(self.get_matched)
-        response = self.client.get(url + '?keyword=test&time_range=last_week')
+        response = self.client.get(url + '?filter=semua&keyword=test&time_range=last_week')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
@@ -442,7 +630,7 @@ class QuestionViewTest(APITestCase):
 
     def test_get_matched_no_keyword(self):
         url = reverse(self.get_matched)
-        response = self.client.get(url + '?time_range=last_week')
+        response = self.client.get(url + '?filter=semua&time_range=last_week')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
@@ -450,16 +638,15 @@ class QuestionViewTest(APITestCase):
 
     def test_get_matched_invalid_time_range(self):
         url = reverse(self.get_matched)
-        response = self.client.get(url + '?keyword=test&time_range=invalid_format')
+        response = self.client.get(url + '?filter=semua&keyword=test&time_range=invalid_format')
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['detail'], "Invalid time range format.")
 
     def test_get_matched_unauthorized_access(self):
-        # Remove authentication
         self.client.credentials()
         url = reverse(self.get_matched)
-        response = self.client.get(url + '?keyword=test&time_range=last_week')
+        response = self.client.get(url + '?filter=semua&keyword=test&time_range=last_week')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data['detail'], "Authentication credentials were not provided.")
@@ -474,8 +661,34 @@ class QuestionViewTest(APITestCase):
 
     def test_get_matched_older_questions(self):
         url = reverse(self.get_matched)
-        response = self.client.get(url + '?keyword=test&time_range=older')
+        response = self.client.get(url + '?filter=semua&keyword=test&time_range=older')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('count', response.data)
         self.assertIn('results', response.data)
+
+    def test_get_field_values_as_admin(self):
+        self.user1.is_superuser = True
+        self.user1.is_staff = True
+        self.user1.save()
+        
+        url = reverse(self.get_field_values)
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('pengguna', response.data)
+        self.assertIn('judul', response.data)
+        self.assertIn('topik', response.data)
+
+        # reset user status
+        self.user1.is_superuser = False
+        self.user1.is_staff = False
+        self.user1.save()
+
+    def test_get_field_values_non_admin(self):
+        url = reverse(self.get_field_values)
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('judul', response.data)
+        self.assertIn('topik', response.data)
