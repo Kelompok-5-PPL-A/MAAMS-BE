@@ -12,3 +12,13 @@ class ErrorMsg:
     VALUE_NOT_UPDATED = "Tidak boleh sama dengan yang sebelumnya"
     INVALID_FILTERS = 'Invalid filter option.'
     AI_SERVICE_ERROR = "Failed to call the AI service."
+    
+class FeedbackMsg:
+    # Root Cause Messages
+    ROOT_FOUND = "Akar masalah kolom {column} ditemukan"
+
+    # False Messages
+    FALSE_ROW_1_NOT_CAUSE = "Sebab {column}1 bukan merupakan sebab dari pertanyaan"
+    FALSE_ROW_N_NOT_CAUSE = "Sebab {column}{row} bukan merupakan sebab dari {column}{prev_row}"
+    FALSE_ROW_N_POSITIVE_NEUTRAL = "Sebab {column}{row} merupakan sebab positif atau netral"
+    FALSE_ROW_N_SIMILAR_PREVIOUS = "Sebab {column}{row} mirip dengan sebab sebelumnya"
