@@ -16,3 +16,8 @@ class FilterType(Enum):
     TOPIK = 'topik'
     JUDUL = 'judul'
     PENGGUNA = 'pengguna'
+
+class ValidationType(Enum):
+    NORMAL = 'normal'
+    ROOT = 'root'
+    FALSE = 'false'

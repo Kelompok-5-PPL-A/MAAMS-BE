@@ -17,3 +17,5 @@ class Causes(models.Model):
     mode = models.CharField(max_length = 20, choices=ModeChoices.choices, default=ModeChoices.PRIBADI)
     cause = models.CharField(max_length = 120)
     status = models.BooleanField(default=False)
+    root_status = models.BooleanField(default=False)
+    feedback = models.CharField(max_length = 50, default='')
